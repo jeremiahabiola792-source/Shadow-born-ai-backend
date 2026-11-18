@@ -1,4 +1,5 @@
 
+
 export default {
   async fetch(request, env) {
     const cors = {
@@ -25,7 +26,7 @@ export default {
     if (url.pathname === "/" && request.method === "GET") {
       return json({
         name: "Shadow Born AI",
-        status: "Backend is running"
+        status: "Gemini backend is running"
       });
     }
 
@@ -33,34 +34,43 @@ export default {
       return json({ error: "Endpoint not found" }, 404);
     }
 
-    if (!env.OPENAI_API_KEY) {
-      return json({ error: "API key secret is not configured" }, 500);
+    if (!env.GEMINI_API_KEY) {
+      return json({
+        error: "Gemini API key is not configured"
+      }, 500);
     }
 
     try {
       const body = await request.json();
 
-      if (!Array.isArray(body.messages)) {
+      if (!Array.isArray(body.messages) || !body.messages.length) {
         return json({ error: "Messages are required" }, 400);
       }
 
-      const messages = body.messages.map((m) => ({
-        role: m.role === "assistant" ? "assistant" : "user",
-        content: m.content
+      const contents = body.messages.map(m => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: String(m.content || "") }]
       }));
 
       const response = await fetch(
-        "https://api.openai.com/v1/responses",
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
         {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "x-goog-api-key": env.GEMINI_API_KEY
           },
           body: JSON.stringify({
-            model: "gpt-4.1-mini",
-            instructions: "You are Shadow Born AI, a helpful and friendly assistant. Answer clearly and accurately.",
-            input: messages
+            systemInstruction: {
+              parts: [{
+                text: "You are Shadow Born AI, a helpful, intelligent and friendly AI assistant. Answer clearly, accurately and naturally. Explain difficult topics step by step when necessary."
+              }]
+            },
+            contents,
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 2048
+            }
           })
         }
       );
@@ -69,15 +79,27 @@ export default {
 
       if (!response.ok) {
         return json({
-          error: result.error?.message || "AI request failed"
+          error: result.error?.message || "Gemini request failed"
         }, 502);
       }
 
+      const reply = result.candidates?.[0]?.content?.parts
+        ?.map(part => part.text || "")
+        .join("")
+        .trim();
+
+      if (!reply) {
+        return json({
+          error: "Gemini returned no text response"
+        }, 502);
+      }
+
+      return json({ reply });
+
+    } catch (error) {
       return json({
-        reply: result.output_text || "I couldn't generate a reply."
-      });
-    } catch {
-      return json({ error: "Something went wrong. Please try again." }, 500);
+        error: error.message || "Something went wrong"
+      }, 500);
     }
   }
 };
