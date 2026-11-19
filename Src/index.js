@@ -1,10 +1,9 @@
 
-
 export default {
   async fetch(request, env) {
     const cors = {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Methods": "POST, OPTIONS, GET",
       "Access-Control-Allow-Headers": "Content-Type"
     };
 
@@ -26,7 +25,7 @@ export default {
     if (url.pathname === "/" && request.method === "GET") {
       return json({
         name: "Shadow Born AI",
-        status: "Gemini backend is running"
+        status: "Backend is running"
       });
     }
 
@@ -35,9 +34,7 @@ export default {
     }
 
     if (!env.GEMINI_API_KEY) {
-      return json({
-        error: "Gemini API key is not configured"
-      }, 500);
+      return json({ error: "Gemini API key is missing" }, 500);
     }
 
     try {
@@ -47,58 +44,79 @@ export default {
         return json({ error: "Messages are required" }, 400);
       }
 
-      const contents = body.messages.map(m => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: String(m.content || "") }]
-      }));
+      const contents = body.messages
+        .filter(m => m.role === "user" || m.role === "assistant")
+        .map(m => ({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: [{ text: String(m.content || "") }]
+        }));
 
-      const response = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": env.GEMINI_API_KEY
-          },
-          body: JSON.stringify({
-            systemInstruction: {
-              parts: [{
-                text: "You are Shadow Born AI, a helpful, intelligent and friendly AI assistant. Answer clearly, accurately and naturally. Explain difficult topics step by step when necessary."
-              }]
+      const models = [
+        "gemini-3.8-flash",
+        "gemini-3.6-flash",
+        "gemini-3.1-flash-lite"
+      ];
+
+      let lastError = "";
+
+      for (const model of models) {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": env.GEMINI_API_KEY
             },
-            contents,
-            generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: 2048
-            }
-          })
+            body: JSON.stringify({
+              systemInstruction: {
+                parts: [{
+                  text: "You are Shadow Born AI, a helpful, intelligent, friendly AI assistant. Answer accurately, naturally and clearly. Explain difficult topics step by step when needed."
+                }]
+              },
+              contents,
+              generationConfig: {
+                temperature: 0.7,
+                maxOutputTokens: 2048
+              }
+            })
+          }
+        );
+
+        const result = await response.json();
+
+        if (response.ok) {
+          const reply = result.candidates?.[0]?.content?.parts
+            ?.map(part => part.text || "")
+            .join("")
+            .trim();
+
+          if (reply) {
+            return json({
+              reply,
+              modelUsed: model
+            });
+          }
+
+          lastError = `${model} returned no text`;
+
+        } else {
+          lastError = result.error?.message || `HTTP ${response.status}`;
+
+          // Only switch models when the server reports overload.
+          if (response.status !== 503) {
+            return json({ error: lastError }, 502);
+          }
         }
-      );
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        return json({
-          error: result.error?.message || "Gemini request failed"
-        }, 502);
       }
 
-      const reply = result.candidates?.[0]?.content?.parts
-        ?.map(part => part.text || "")
-        .join("")
-        .trim();
-
-      if (!reply) {
-        return json({
-          error: "Gemini returned no text response"
-        }, 502);
-      }
-
-      return json({ reply });
+      return json({
+        error: "All AI models are currently busy. Please try again shortly. Details: " + lastError
+      }, 503);
 
     } catch (error) {
       return json({
-        error: error.message || "Something went wrong"
+        error: error.message || "Backend error"
       }, 500);
     }
   }
