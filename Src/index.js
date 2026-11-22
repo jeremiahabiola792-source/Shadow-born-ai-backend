@@ -103,7 +103,7 @@ async function askGroq(messages, env) {
           method: "POST",
           headers: {
             // Correct authorization header:
-            "Authorization": `Bearer ${env.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}`,
+            "Authorization": `Bearer ${env.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}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
