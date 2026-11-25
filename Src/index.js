@@ -103,7 +103,7 @@ async function askGroq(messages, env) {
           method: "POST",
           headers: {
             // Correct authorization header:
-            "Authorization": `Bearer ${env.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}`,
+            "Authorization": `Bearer ${env.GROQ_API_KEY}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -250,7 +250,7 @@ export default {
       if (needsSearch(latestUserMessage.content)) {
         const searchResult = await searchWeb(
           latestUserMessage.content,
-          env.tvly-3h6o3e-JpdSJ73zOcqP4aiUYgH4iAm9NSpDV9nHBj1k8Ki1tQ
+          env.TAVILY_API_KEY
         );
 
         if (searchResult.results.length > 0) {
